@@ -1,0 +1,26 @@
+{
+  "name": "熊熊嗡嗡的自由家計簿",
+  "short_name": "自由家計簿",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F7F2E9",
+  "theme_color": "#F7F2E9",
+  "description": "極簡個人財務儀表板：資產水庫邏輯，Google Sheets 雲端同步。",
+  "lang": "zh-Hant",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

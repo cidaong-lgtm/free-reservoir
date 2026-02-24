@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>熊熊嗡嗡的自由家計簿</title>
+
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#F7F2E9">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root{
+      --bg: #F7F2E9;            /* 溫潤米白 */
+      --ink: #1f2937;
+      --muted: rgba(31,41,55,.65);
+      --card: rgba(255,255,255,.62);
+      --line: rgba(31,41,55,.10);
+
+      --btn-income: #F3C74B;    /* 晨光黃（進水） */
+      --btn-expense: #8B5A2B;   /* 木質棕（消耗） */
+      --btn-audit: #2E6F9E;     /* 台東海洋藍（資產盤點） */
+
+      --c-assets: #2E6F9E;
+      --c-expense: #7A4A24;
+      --c-income: #C9A227;
+      --c-fixed: #374151;
+      --c-interest: #2F6B3C;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      letter-spacing: .2px;
+    }
+    .wrap{ max-width:1100px; margin:0 auto; padding:28px 18px 34px; }
+    header{
+      display:flex; align-items:flex-end; justify-content:space-between; gap:16px;
+      margin-bottom: 18px;
+    }
+    h1{ margin:0; font-size:22px; font-weight:780; letter-spacing:.4px; }
+    .subtitle{ font-size:13px; color:var(--muted); line-height:1.45; margin-top:6px; }
+    .meta{
+      text-align:right; font-size:12px; color:var(--muted); line-height:1.5;
+      display:flex; flex-direction:column; gap:6px; align-items:flex-end;
+      white-space:nowrap;
+    }
+    .meta .row{ display:flex; gap:10px; align-items:center; }
+    .linkBtn{
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.45);
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      cursor:pointer;
+      color: rgba(31,41,55,.82);
+    }
+    .linkBtn:hover{ background: rgba(255,255,255,.70); }
+
+    .card{ background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px 16px 14px; }
+    .top{ display:flex; flex-direction:column; gap:14px; margin-bottom: 14px; }
+    .canvasWrap{ position:relative; height: 340px; width:100%; }
+    .emptyHint{
+      position:absolute; inset:0; display:none;
+      align-items:center; justify-content:center; text-align:center;
+      padding:20px; color: var(--muted); font-size:13px; line-height:1.6;
+      pointer-events:none;
+    }
+
+    .toggles{ display:flex; flex-wrap:wrap; gap:10px 12px; padding:2px 2px 6px; }
+    .toggle{
+      display:inline-flex; align-items:center; gap:10px;
+      padding:8px 10px; border-radius:999px; border:1px solid var(--line);
+      background: rgba(255,255,255,.40); user-select:none;
+    }
+    .dot{ width:10px; height:10px; border-radius:999px; flex:0 0 auto; }
+    .toggleLabel{ font-size:13px; color: rgba(31,41,55,.86); white-space:nowrap; }
+
+    .switch{ position:relative; width:44px; height:26px; flex:0 0 auto; }
+    .switch input{ opacity:0; width:0;height:0; }
+    .slider{ position:absolute; inset:0; background: rgba(31,41,55,.18); border-radius:999px; transition:.18s ease; }
+    .slider::before{
+      content:""; position:absolute; height:20px; width:20px; left:3px; top:3px;
+      border-radius:999px; background: rgba(255,255,255,.92); transition:.18s ease;
+      box-shadow: 0 1px 0 rgba(0,0,0,.08);
+    }
+    .switch input:checked + .slider{ background: rgba(31,41,55,.34); }
+    .switch input:checked + .slider::before{ transform: translateX(18px); }
+
+    /* 中段三大按鈕 */
+    .actions{ display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
+    .bigBtn{
+      border:1px solid var(--line); border-radius:18px; padding:18px 16px;
+      min-height:92px; text-align:left; cursor:pointer; background: rgba(255,255,255,.55);
+      transition: transform .08s ease, filter .12s ease;
+    }
+    .bigBtn:hover{ filter: brightness(1.02); }
+    .bigBtn:active{ transform: translateY(1px); }
+    .bigBtn .kicker{ font-size:12px; margin-bottom:6px; }
+    .bigBtn .label{ font-size:18px; font-weight:780; display:flex; gap:10px; align-items:center; }
+    .chip{
+      display:inline-flex; align-items:center; justify-content:center;
+      padding:6px 10px; border-radius:999px; font-size:12px; margin-top:10px; width:fit-content;
+      border:1px solid rgba(0,0,0,.08); background: rgba(255,255,255,.45); color: rgba(31,41,55,.78);
+    }
+    .income{ background: color-mix(in srgb, var(--btn-income) 64%, white); }
+    .expense{ background: color-mix(in srgb, var(--btn-expense) 52%, white); color: rgba(255,255,255,.92); }
+    .audit{ background: color-mix(in srgb, var(--btn-audit) 58%, white); color: rgba(255,255,255,.92); }
+    .income .kicker{ color: rgba(31,41,55,.72); }
+    .expense .kicker, .audit .kicker{ color: rgba(255,255,255,.80); }
+    .expense .chip, .audit .chip{ color: rgba(255,255,255,.86); border-color: rgba(255,255,255,.20); background: rgba(255,255,255,.10); }
+
+    /* 下段歷史列表 */
+    .historyHead{ display:flex; justify-content:space-between; align-items:flex-end; gap:12px; margin-bottom: 10px; }
+    .historyTitle{ font-size: 14px; font-weight: 760; letter-spacing:.2px; }
+    .hint{ font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+    .tableWrap{ overflow:auto; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.42); }
+    table{ width:100%; border-collapse: collapse; min-width: 720px; }
+    th, td{ padding: 10px 12px; border-bottom: 1px solid rgba(31,41,55,.08); vertical-align: top; font-size: 13px; }
+    th{ text-align:left; font-size: 12px; color: rgba(31,41,55,.72); font-weight: 760; background: rgba(255,255,255,.45); position: sticky; top: 0; z-index: 1; }
+    tr:last-child td{ border-bottom: 0; }
+    .amount{ font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 700; }
+    .tag{ display:inline-flex; align-items:center; gap:8px; padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(31,41,55,.10); background: rgba(255,255,255,.52); color: rgba(31,41,55,.82); white-space: nowrap; }
+    .tag .miniDot{ width:8px; height:8px; border-radius:999px; }
+
+    .rowActions{ display:flex; gap:8px; justify-content:flex-end; white-space: nowrap; }
+    .iconBtn{ border:1px solid rgba(31,41,55,.12); background: rgba(255,255,255,.60); color: rgba(31,41,55,.82); padding: 7px 10px; border-radius: 12px; cursor:pointer; font-size: 12px; font-weight: 700; }
+    .iconBtn:hover{ background: rgba(255,255,255,.80); }
+    .danger{ border-color: rgba(122,74,36,.25); color: rgba(122,74,36,.92); }
+
+    /* Modal & Forms */
+    .modalOverlay{ position:fixed; inset:0; background: rgba(10,15,20,.38); display:none; align-items:center; justify-content:center; padding: 18px; z-index: 50; }
+    .modalOverlay.open{ display:flex; }
+    .modal{ width: min(560px, 100%); border-radius: 18px; border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.82); backdrop-filter: blur(10px); padding: 16px 16px 14px; box-shadow: 0 10px 40px rgba(0,0,0,.16); }
+    .modalHead{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom: 10px; }
+    .modalTitle{ margin:0; font-size:16px; font-weight:800; letter-spacing:.2px; }
+    .modalClose{ border:0; background:transparent; cursor:pointer; font-size:18px; line-height:1; padding: 6px 8px; border-radius: 10px; color: rgba(31,41,55,.75); }
+    .modalClose:hover{ background: rgba(31,41,55,.06); }
+
+    form{ display:grid; grid-template-columns: 1fr 1fr; gap:10px 12px; margin-top: 10px; }
+    .full{ grid-column: 1 / -1; }
+    label{ display:flex; flex-direction:column; gap:6px; font-size:12px; color: rgba(31,41,55,.78); }
+    input, select, textarea{ width:100%; border-radius:12px; border:1px solid rgba(31,41,55,.12); background: rgba(255,255,255,.78); padding: 10px 10px; font-size: 14px; color: rgba(31,41,55,.92); outline:none; }
+    textarea{ min-height: 92px; resize: vertical; }
+    input:focus, select:focus, textarea:focus{ border-color: rgba(31,41,55,.26); background: rgba(255,255,255,.92); }
+
+    .formActions{ grid-column: 1 / -1; display:flex; gap:10px; justify-content:flex-end; margin-top: 4px; }
+    .btn{ border: 1px solid rgba(31,41,55,.12); background: rgba(255,255,255,.66); color: rgba(31,41,55,.88); padding: 10px 12px; border-radius: 12px; cursor:pointer; font-weight: 700; letter-spacing:.2px; }
+    .btn:hover{ background: rgba(255,255,255,.82); }
+    .btn.primary{ border:0; }
+    .btn.primary.income{ background: color-mix(in srgb, var(--btn-income) 70%, white); color: rgba(31,41,55,.92); }
+    .btn.primary.expense{ background: color-mix(in srgb, var(--btn-expense) 62%, white); color: rgba(255,255,255,.92); }
+    .btn.primary.audit{ background: color-mix(in srgb, var(--btn-audit) 64%, white); color: rgba(255,255,255,.92); }
+
+    /* Toast */
+    .toast{ position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(255,255,255,.90); border: 1px solid rgba(31,41,55,.12); border-radius: 999px; padding: 10px 12px; color: rgba(31,41,55,.86); font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,.10); opacity: 0; pointer-events:none; transition: opacity .18s ease, transform .18s ease; z-index: 60; max-width: calc(100% - 28px); white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
+    .toast.show{ opacity:1; transform: translateX(-50%) translateY(-2px); }
+
+    @media (max-width: 860px){
+      .canvasWrap{ height: 320px; }
+      .actions{ grid-template-columns: 1fr; }
+      .meta{ display:none; }
+      table{ min-width: 640px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>拉蓊的自由水庫</h1>
+        <div class="subtitle">資產水庫邏輯：股票不是支出，是資產形態轉移；真正的「消耗」才算流失。</div>
+      </div>
+      <div class="meta">
+        <div class="row" id="metaText">尚未同步</div>
+        <div class="row">
+          <button class="linkBtn" id="btnSync">重新同步</button>
+          <button class="linkBtn" id="btnPing">測試 API</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="card top">
+      <div class="canvasWrap">
+        <canvas id="lineChart" aria-label="每月趨勢折線圖" role="img"></canvas>
+        <div class="emptyHint" id="emptyHint">
+          目前還沒有資料。<br/>你可以先做一筆「⚖️ 月底盤點」，圖表就有骨架了。
+        </div>
+      </div>
+      <div class="toggles" aria-label="折線圖顯示開關">
+        <div class="toggle"><span class="dot" style="background: var(--c-income)"></span><span class="toggleLabel">總收入</span><label class="switch"><input type="checkbox" id="tg_income" /><span class="slider"></span></label></div>
+        <div class="toggle"><span class="dot" style="background: var(--c-expense)"></span><span class="toggleLabel">總支出</span><label class="switch"><input type="checkbox" id="tg_expense" checked /><span class="slider"></span></label></div>
+        <div class="toggle"><span class="dot" style="background: var(--c-assets)"></span><span class="toggleLabel">總資產</span><label class="switch"><input type="checkbox" id="tg_assets" checked /><span class="slider"></span></label></div>
+        <div class="toggle"><span class="dot" style="background: var(--c-fixed)"></span><span class="toggleLabel">固定支出</span><label class="switch"><input type="checkbox" id="tg_fixed" /><span class="slider"></span></label></div>
+        <div class="toggle"><span class="dot" style="background: var(--c-interest)"></span><span class="toggleLabel">被動收入/孳息</span><label class="switch"><input type="checkbox" id="tg_interest" /><span class="slider"></span></label></div>
+      </div>
+    </section>
+
+    <section class="actions">
+      <button class="bigBtn income" id="btnIncome">
+        <div class="kicker">進水｜日常紀錄</div><div class="label">＋ 記錄收入</div><div class="chip">工作收入 / 其他收入</div>
+      </button>
+      <button class="bigBtn expense" id="btnExpense">
+        <div class="kicker">消耗｜日常紀錄</div><div class="label">－ 分配支出</div><div class="chip">固定支出 / 其他支出</div>
+      </button>
+      <button class="bigBtn audit" id="btnAudit">
+        <div class="kicker">資產盤點｜月底盤點</div><div class="label">⚖️ 月底盤點</div><div class="chip">現金 / 股票 / 孳息</div>
+      </button>
+    </section>
+
+    <section class="card">
+      <div class="historyHead">
+        <div><div class="historyTitle">生活軌跡明細（收入/支出）</div><div class="hint">依日期由新到舊。每筆可編輯/刪除。多人共用時以「最後寫入」為準。</div></div>
+        <div class="hint" id="countText">—</div>
+      </div>
+      <div class="tableWrap">
+        <table>
+          <thead><tr><th style="width:120px;">日期</th><th style="width:160px;">分類</th><th style="width:120px;">金額</th><th>註記</th><th style="width:160px; text-align:right;">操作</th></tr></thead>
+          <tbody id="historyBody"><tr><td colspan="5" style="color:var(--muted); padding:16px 12px;">尚未載入資料</td></tr></tbody>
+        </table>
+      </div>
+
+      <div style="height:12px;"></div>
+      <div class="historyHead" style="margin-bottom:8px;">
+        <div><div class="historyTitle">月底盤點（資產水庫）</div><div class="hint">盤點決定「總資產」與「孳息」線。</div></div>
+        <div class="hint" id="invCountText">—</div>
+      </div>
+      <div class="tableWrap">
+        <table>
+          <thead><tr><th style="width:120px;">月份</th><th style="width:140px;">現金</th><th style="width:140px;">股票</th><th style="width:140px;">孳息</th><th>註記</th><th style="width:160px; text-align:right;">操作</th></tr></thead>
+          <tbody id="invBody"><tr><td colspan="6" style="color:var(--muted); padding:16px 12px;">尚未載入資料</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="modalOverlay" id="modalIncome" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modalHead"><h2 class="modalTitle" id="incomeTitle">＋ 記錄收入</h2><button class="modalClose" data-close="modalIncome">✕</button></div>
+      <form id="formIncome" data-action="upsertDaily" autocomplete="off">
+        <input type="hidden" name="id" />
+        <input type="hidden" name="flow" value="income" /> <label>日期<input type="date" name="date" required /></label>
+        <label>分類<select name="category" required><option value="work_income">工作收入</option><option value="other_income">其他收入</option></select></label>
+        <label class="full">金額<input type="number" name="amount" min="0" step="1" required /></label>
+        <label class="full">隨心註記<textarea name="note"></textarea></label>
+        <div class="formActions"><button class="btn" type="button" data-close="modalIncome">取消</button><button class="btn primary income" type="submit" id="incomeBtn">儲存</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modalOverlay" id="modalExpense" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modalHead"><h2 class="modalTitle" id="expenseTitle">－ 分配支出</h2><button class="modalClose" data-close="modalExpense">✕</button></div>
+      <form id="formExpense" data-action="upsertDaily" autocomplete="off">
+        <input type="hidden" name="id" />
+        <input type="hidden" name="flow" value="expense" /> <label>日期<input type="date" name="date" required /></label>
+        <label>分類<select name="category" required><option value="fixed_expense">固定支出</option><option value="other_expense">其他支出</option></select></label>
+        <label class="full">金額<input type="number" name="amount" min="0" step="1" required /></label>
+        <label class="full">隨心註記<textarea name="note"></textarea></label>
+        <div class="formActions"><button class="btn" type="button" data-close="modalExpense">取消</button><button class="btn primary expense" type="submit" id="expenseBtn">儲存</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modalOverlay" id="modalAudit" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modalHead"><h2 class="modalTitle" id="auditTitle">⚖️ 月底盤點</h2><button class="modalClose" data-close="modalAudit">✕</button></div>
+      <form id="formAudit" data-action="upsertInventory" autocomplete="off">
+        <input type="hidden" name="id" />
+        <label>盤點月份<input type="month" name="month" required /></label>
+        <label>目前現金餘額<input type="number" name="cash" min="0" step="1" required /></label>
+        <label>目前股票現值<input type="number" name="stocks" min="0" step="1" required /></label>
+        <label>本月領取孳息<input type="number" name="interest" min="0" step="1" required /></label>
+        <label class="full">盤點註記<textarea name="note"></textarea></label>
+        <div class="formActions"><button class="btn" type="button" data-close="modalAudit">取消</button><button class="btn primary audit" type="submit" id="auditBtn">儲存</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    /** ====== API 設定 ====== */
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbykdQVqkwVJsVO3V-pfCVVkB50BPNaKgi0tL1_TCFfppGSLbR-VxrpXfOmGTKH1O73uWw/exec";
+    const API_TOKEN = "Daong&Nicole_family_20250328";
+
+    const fmt = new Intl.NumberFormat("zh-TW");
+    const $ = (s) => document.querySelector(s);
+    const $$ = (s) => document.querySelectorAll(s);
+
+    const CATEGORY_LABELS = { work_income: "工作收入", other_income: "其他收入", fixed_expense: "固定支出", other_expense: "其他支出" };
+
+    const state = { daily: [], inventory: [], chart: null, lastSync: null };
+
+    // 工具函式：整合日期輸出 (預設輸出 YYYY-MM-DD，帶入 true 則為 YYYY-MM)
+    const getISODate = (d = new Date(), monthOnly = false) => {
+      const pad = n => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}${monthOnly ? '' : `-${pad(d.getDate())}`}`;
+    };
+    
+    const getCSS = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+    const monthFromDate = d => (d || "").slice(0,7);
+    const normalizeNum = n => Number.isFinite(Number(n)) ? Number(n) : 0;
+    const escapeHtml = s => String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+
+    function toast(msg){
+      const el = $("#toast");
+      el.textContent = msg; el.classList.add("show");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(()=> el.classList.remove("show"), 1800);
+    }
+
+    const setMeta = text => $("#metaText").textContent = text;
+    const mustHaveConfig = () => (GAS_URL.includes("PASTE_") || API_TOKEN.includes("PASTE_")) ? toast("請先填入 GAS_URL 與 API_TOKEN") && false : true;
+
+    // API 呼叫模組
+    const buildUrl = params => { const u = new URL(GAS_URL); u.search = new URLSearchParams({...params, token: API_TOKEN}); return u; };
+    const apiGet = async params => { const res = await fetch(buildUrl(params), { cache: "no-store" }); if(!res.ok) throw new Error("GET failed"); return { json: await res.json(), url: buildUrl(params).toString() }; };
+    const apiPost = async params => { const res = await fetch(GAS_URL, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({...params, token: API_TOKEN}) }); if(!res.ok) throw new Error("POST failed"); return await res.json(); };
+
+    // 離線快取模組
+    async function cacheReadAll(url, json){ if("caches" in window) await (await caches.open("reservoir-v1")).put(url, new Response(JSON.stringify(json))); }
+    async function loadFromCache(url){ return "caches" in window && await caches.match(url).then(r => r ? r.json() : null); }
+
+    // 資料載入邏輯
+    async function loadAll(){
+      if(!mustHaveConfig()) return;
+      setMeta(navigator.onLine ? "同步中…" : "離線（嘗試載入快取）");
+      try{
+        const { json, url } = await apiGet({ action: "readAll" });
+        if(!json.ok) throw new Error(json.error);
+        state.daily = json.daily || []; state.inventory = json.inventory || []; state.lastSync = new Date();
+        await cacheReadAll(url, json);
+        setMeta(`已同步｜${state.lastSync.toLocaleString('zh-TW', {hour12: false}).slice(0, 16)}`);
+        renderAll();
+      }catch(err){
+        const cached = await loadFromCache(buildUrl({ action: "readAll" }));
+        if(cached && cached.ok){
+          state.daily = cached.daily || []; state.inventory = cached.inventory || [];
+          setMeta("離線快取｜顯示最後同步資料"); toast("目前離線：顯示最後一次同步資料"); renderAll(); return;
+        }
+        setMeta("同步失敗"); toast("同步失敗：請確認網路與 GAS 設定");
+      }
+    }
+
+    function renderAll(){ renderChart(); renderHistory(); renderInventoryList(); }
+
+    /** ------------------------- 圖表邏輯精簡 ------------------------- */
+    function buildSeries(months){
+      const sum = (mo, sets) => state.daily.filter(r => monthFromDate(r.date) === mo && sets.has(r.category)).reduce((s, r) => s + Number(r.amount||0), 0);
+      return months.reduce((acc, mo) => {
+        acc.income.push(sum(mo, new Set(["work_income","other_income"])));
+        acc.expense.push(sum(mo, new Set(["fixed_expense","other_expense"])));
+        acc.fixed.push(sum(mo, new Set(["fixed_expense"])));
+        const inv = state.inventory.find(x => x.month === mo);
+        acc.assets.push(inv ? Number(inv.cash||0) + Number(inv.stocks||0) : null);
+        acc.interest.push(inv ? Number(inv.interest||0) : 0);
+        return acc;
+      }, { income:[], expense:[], fixed:[], assets:[], interest:[] });
+    }
+
+    const applyToggles = () => {
+      if(!state.chart) return;
+      const toggles = [$("#tg_assets").checked, $("#tg_expense").checked, $("#tg_income").checked, $("#tg_fixed").checked, $("#tg_interest").checked];
+      state.chart.data.datasets.forEach((ds, i) => ds.hidden = !toggles[i]);
+      state.chart.update();
+    };
+
+    function renderChart(){
+      let months = [...new Set([...state.daily.map(r => monthFromDate(r.date)), ...state.inventory.map(r => r.month)])].filter(Boolean).sort();
+      if(!months.length) months = Array.from({length: 6}, (_, i) => { const d = new Date(); d.setMonth(d.getMonth()-5+i); return getISODate(d, true); });
+      
+      $("#emptyHint").style.display = (state.daily.length + state.inventory.length) ? "none" : "flex";
+      const s = buildSeries(months);
+      
+      const datasets = [
+        { label: "總資產", data: s.assets, borderColor: getCSS("--c-assets"), backgroundColor: getCSS("--c-assets") },
+        { label: "總支出", data: s.expense, borderColor: getCSS("--c-expense"), backgroundColor: getCSS("--c-expense") },
+        { label: "總收入", data: s.income, borderColor: getCSS("--c-income"), backgroundColor: getCSS("--c-income") },
+        { label: "固定支出", data: s.fixed, borderColor: getCSS("--c-fixed"), backgroundColor: getCSS("--c-fixed") },
+        { label: "被動收入", data: s.interest, borderColor: getCSS("--c-interest"), backgroundColor: getCSS("--c-interest") }
+      ].map(ds => ({ ...ds, borderWidth: 2, pointRadius: 2, tension: 0.25, spanGaps: false }));
+
+      if(state.chart){
+        state.chart.data.labels = months; state.chart.data.datasets.forEach((ds, i) => ds.data = datasets[i].data);
+        applyToggles(); return;
+      }
+
+      state.chart = new Chart($("#lineChart"), {
+        type: "line", data: { labels: months, datasets },
+        options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}：${ctx.parsed.y === null ? '—' : fmt.format(ctx.parsed.y)}` } } }, scales: { x: { grid: { display: false } } } }
+      });
+      applyToggles();
+    }
+
+    /** ------------------------- 列表渲染精簡 ------------------------- */
+    function renderHistory(){
+      const rows = [...state.daily].sort((a,b)=> (b.date||"").localeCompare(a.date||""));
+      $("#countText").textContent = `共 ${rows.length} 筆`;
+      $("#historyBody").innerHTML = rows.length ? rows.map(r => `
+        <tr><td>${escapeHtml(r.date)}</td>
+        <td><span class="tag"><span class="miniDot" style="background:${r.flow==='income' ? getCSS("--btn-income") : getCSS("--btn-expense")}"></span>${escapeHtml(CATEGORY_LABELS[r.category] || r.category)}</span></td>
+        <td class="amount">${r.flow==='income'?'+':'−'} ${fmt.format(r.amount||0)}</td>
+        <td style="color:var(--muted);">${escapeHtml(r.note)}</td>
+        <td style="text-align:right;"><div class="rowActions"><button class="iconBtn" data-act="editDaily" data-id="${r.id}">編輯</button><button class="iconBtn danger" data-act="delDaily" data-id="${r.id}">刪除</button></div></td></tr>
+      `).join("") : `<tr><td colspan="5" style="color:var(--muted); padding:16px 12px;">無紀錄</td></tr>`;
+    }
+
+    function renderInventoryList(){
+      const rows = [...state.inventory].sort((a,b)=> (b.month||"").localeCompare(a.month||""));
+      $("#invCountText").textContent = `共 ${rows.length} 筆`;
+      $("#invBody").innerHTML = rows.length ? rows.map(r => `
+        <tr><td>${escapeHtml(r.month)}</td><td class="amount">${fmt.format(r.cash||0)}</td><td class="amount">${fmt.format(r.stocks||0)}</td><td class="amount">${fmt.format(r.interest||0)}</td>
+        <td style="color:var(--muted);">${escapeHtml(r.note)}</td>
+        <td style="text-align:right;"><div class="rowActions"><button class="iconBtn" data-act="editInv" data-id="${r.id}">編輯</button><button class="iconBtn danger" data-act="delInv" data-id="${r.id}">刪除</button></div></td></tr>
+      `).join("") : `<tr><td colspan="6" style="color:var(--muted); padding:16px 12px;">無盤點</td></tr>`;
+    }
+
+    /** ------------------------- Modal 與通用表單處理 ------------------------- */
+    const openModal = id => { $(`#${id}`).classList.add("open"); $(`#${id}`).setAttribute("aria-hidden", "false"); };
+    const closeModal = id => { $(`#${id}`).classList.remove("open"); $(`#${id}`).setAttribute("aria-hidden", "true"); };
+
+    // 高度模組化的 Modal 開啟函數
+    function fillAndOpenModal({ modalId, titleId, titleText, btnId, btnText, formId, defaultValues }) {
+      $(titleId).textContent = titleText;
+      $(btnId).textContent = btnText;
+      const f = $(formId);
+      f.reset();
+      Object.entries(defaultValues).forEach(([k, v]) => f.elements[k] && (f.elements[k].value = v));
+      openModal(modalId);
+    }
+
+    // DRY: 通用的表單送出綁定
+    function bindFormSubmit(formId, modalId) {
+      $(formId).addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if(!mustHaveConfig()) return;
+        const form = e.currentTarget;
+        const payload = { action: form.dataset.action };
+        new FormData(form).forEach((v, k) => payload[k] = ['amount','cash','stocks','interest'].includes(k) ? normalizeNum(v) : v.trim());
+
+        if (formId === '#formAudit' && !payload.month) return toast("請選擇月份");
+        if (formId !== '#formAudit' && (!payload.date || payload.amount <= 0)) return toast("確認日期與金額（>0）");
+
+        try {
+          const res = await apiPost(payload);
+          if(!res.ok) throw new Error(res.error);
+          closeModal(modalId);
+          toast(`已${payload.id ? '更新' : '新增'}！`);
+          loadAll();
+        } catch(err) { toast("寫入失敗，請確認網路與 GAS 設定"); }
+      });
+    }
+
+    async function apiDelete(action, id, msg) {
+      if(!confirm(`確定要刪除這筆${msg}？`)) return;
+      try{
+        const res = await apiPost({ action, id });
+        if(!res.ok) throw new Error(res.error);
+        toast("已刪除"); loadAll();
+      }catch(err){ toast("刪除失敗"); }
+    }
+
+    /** ------------------------- 初始化綁定 ------------------------- */
+    function wireEvents(){
+      // 共用 Modal 關閉機制
+      document.addEventListener("click", e => e.target?.dataset?.close && closeModal(e.target.dataset.close));
+      $$(".modalOverlay").forEach(ov => ov.addEventListener("mousedown", e => e.target === ov && closeModal(ov.id)));
+      
+      // 表單送出綁定
+      bindFormSubmit("#formIncome", "modalIncome");
+      bindFormSubmit("#formExpense", "modalExpense");
+      bindFormSubmit("#formAudit", "modalAudit");
+
+      // 按鈕開啟 Modal (新增)
+      $("#btnIncome").onclick = () => fillAndOpenModal({ modalId: "modalIncome", titleId: "#incomeTitle", titleText: "＋ 記錄收入", btnId: "#incomeBtn", btnText: "儲存", formId: "#formIncome", defaultValues: { id: "", date: getISODate(), category: "work_income" }});
+      $("#btnExpense").onclick = () => fillAndOpenModal({ modalId: "modalExpense", titleId: "#expenseTitle", titleText: "－ 分配支出", btnId: "#expenseBtn", btnText: "儲存", formId: "#formExpense", defaultValues: { id: "", date: getISODate(), category: "fixed_expense" }});
+      $("#btnAudit").onclick = () => fillAndOpenModal({ modalId: "modalAudit", titleId: "#auditTitle", titleText: "⚖️ 月底盤點", btnId: "#auditBtn", btnText: "儲存", formId: "#formAudit", defaultValues: { id: "", month: getISODate(new Date(), true) }});
+
+      // 列表操作 (委派)
+      document.addEventListener("click", e => {
+        const { act, id } = e.target.dataset || {};
+        if(!act) return;
+        const rec = [...state.daily, ...state.inventory].find(x => x.id === id);
+        if(act === "editDaily") {
+          const isInc = rec.flow === 'income' || String(rec.category).includes("income");
+          fillAndOpenModal(isInc 
+            ? { modalId: "modalIncome", titleId: "#incomeTitle", titleText: "編輯收入", btnId: "#incomeBtn", btnText: "更新", formId: "#formIncome", defaultValues: rec }
+            : { modalId: "modalExpense", titleId: "#expenseTitle", titleText: "編輯支出", btnId: "#expenseBtn", btnText: "更新", formId: "#formExpense", defaultValues: rec });
+        }
+        if(act === "editInv") fillAndOpenModal({ modalId: "modalAudit", titleId: "#auditTitle", titleText: "編輯盤點", btnId: "#auditBtn", btnText: "更新", formId: "#formAudit", defaultValues: rec });
+        if(act === "delDaily") apiDelete("deleteDaily", id, "日常紀錄");
+        if(act === "delInv") apiDelete("deleteInventory", id, "盤點紀錄");
+      });
+
+      // 圖表 Switch 與雜項
+      $$(".switch input").forEach(el => el.addEventListener("change", applyToggles));
+      $("#btnSync").onclick = loadAll;
+      $("#btnPing").onclick = async () => toast(await apiGet({action:"ping"}).then(r=>r.json.ok).catch(()=>false) ? "API OK" : "API 連線異常");
+    }
+
+    (async () => {
+      wireEvents();
+      if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(console.warn);
+      loadAll();
+    })();
+  </script>
+</body>
+</html>
