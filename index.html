@@ -175,8 +175,8 @@
   <div class="wrap">
     <header>
       <div>
-        <h1>拉蓊的自由水庫</h1>
-        <div class="subtitle">資產水庫邏輯：股票不是支出，是資產形態轉移；真正的「消耗」才算流失。</div>
+        <h1>熊熊嗡嗡的家庭自由記帳</h1>
+        <div class="subtitle">理財的目標不是最高回報，而是不怕跌倒；財富自由=掌控時間、照顧他人、實踐人生；消費不等於浪費，要用來提升自己。</div>
       </div>
       <div class="meta">
         <div class="row" id="metaText">尚未同步</div>
@@ -374,53 +374,109 @@
     };
 
     function renderChart(){
-      let months = [...new Set([...state.daily.map(r => monthFromDate(r.date)), ...state.inventory.map(r => r.month)])].filter(Boolean).sort();
-      if(!months.length) months = Array.from({length: 6}, (_, i) => { const d = new Date(); d.setMonth(d.getMonth()-5+i); return getISODate(d, true); });
-      
-      $("#emptyHint").style.display = (state.daily.length + state.inventory.length) ? "none" : "flex";
-      const s = buildSeries(months);
-      
-      const datasets = [
-        { label: "總資產", data: s.assets, borderColor: getCSS("--c-assets"), backgroundColor: getCSS("--c-assets") },
-        { label: "總支出", data: s.expense, borderColor: getCSS("--c-expense"), backgroundColor: getCSS("--c-expense") },
-        { label: "總收入", data: s.income, borderColor: getCSS("--c-income"), backgroundColor: getCSS("--c-income") },
-        { label: "固定支出", data: s.fixed, borderColor: getCSS("--c-fixed"), backgroundColor: getCSS("--c-fixed") },
-        { label: "被動收入", data: s.interest, borderColor: getCSS("--c-interest"), backgroundColor: getCSS("--c-interest") }
-      ].map(ds => ({ ...ds, borderWidth: 2, pointRadius: 2, tension: 0.25, spanGaps: false }));
+      try {
+        // 強制產生包含本月在內的過去 12 個月份
+        const months = Array.from({length: 12}, (_, i) => {
+          const d = new Date();
+          d.setDate(1); // 確保日期在1號，避免 31 號跨月時的計算 Bug
+          d.setMonth(d.getMonth() - 11 + i);
+          return getISODate(d, true);
+        });
+        
+        // 防呆：確保 state.daily 或 inventory 有資料才隱藏提示
+        $("#emptyHint").style.display = (state.daily && state.daily.length) || (state.inventory && state.inventory.length) ? "none" : "flex";
+        
+        const s = buildSeries(months);
+        
+        const datasets = [
+          { type: "line", label: "總資產", data: s.assets, borderColor: getCSS("--c-assets"), backgroundColor: getCSS("--c-assets"), borderWidth: 3, pointRadius: 3, tension: 0.3, spanGaps: true },
+          { type: "bar", label: "總支出", data: s.expense, backgroundColor: getCSS("--c-expense"), borderRadius: 4 },
+          { type: "bar", label: "總收入", data: s.income, backgroundColor: getCSS("--c-income"), borderRadius: 4 },
+          { type: "bar", label: "固定支出", data: s.fixed, backgroundColor: getCSS("--c-fixed"), borderRadius: 4 },
+          { type: "bar", label: "被動收入", data: s.interest, backgroundColor: getCSS("--c-interest"), borderRadius: 4 }
+        ];
 
-      if(state.chart){
-        state.chart.data.labels = months; state.chart.data.datasets.forEach((ds, i) => ds.data = datasets[i].data);
-        applyToggles(); return;
+        if(state.chart){
+          state.chart.data.labels = months; 
+          state.chart.data.datasets = datasets;
+          applyToggles(); 
+          return;
+        }
+
+        // 防呆：如果網路慢導致 Chart.js 尚未載入，就先跳過繪製
+        if (typeof Chart === "undefined") return;
+
+        state.chart = new Chart($("#lineChart"), {
+          type: "bar", 
+          data: { labels: months, datasets },
+          options: { 
+            responsive: true, 
+            maintainAspectRatio: false, 
+            interaction: { mode: "index", intersect: false }, 
+            plugins: { 
+              legend: { display: false }, 
+              tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}：${ctx.parsed.y === null ? '—' : fmt.format(ctx.parsed.y)}` } } 
+            }, 
+            scales: { 
+              x: { grid: { display: false } } 
+            } 
+          }
+        });
+        applyToggles();
+      } catch (err) {
+        console.error("圖表渲染時發生錯誤：", err);
       }
-
-      state.chart = new Chart($("#lineChart"), {
-        type: "line", data: { labels: months, datasets },
-        options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}：${ctx.parsed.y === null ? '—' : fmt.format(ctx.parsed.y)}` } } }, scales: { x: { grid: { display: false } } } }
-      });
-      applyToggles();
     }
 
     /** ------------------------- 列表渲染精簡 ------------------------- */
     function renderHistory(){
-      const rows = [...state.daily].sort((a,b)=> (b.date||"").localeCompare(a.date||""));
-      $("#countText").textContent = `共 ${rows.length} 筆`;
-      $("#historyBody").innerHTML = rows.length ? rows.map(r => `
-        <tr><td>${escapeHtml(r.date)}</td>
-        <td><span class="tag"><span class="miniDot" style="background:${r.flow==='income' ? getCSS("--btn-income") : getCSS("--btn-expense")}"></span>${escapeHtml(CATEGORY_LABELS[r.category] || r.category)}</span></td>
-        <td class="amount">${r.flow==='income'?'+':'−'} ${fmt.format(r.amount||0)}</td>
-        <td style="color:var(--muted);">${escapeHtml(r.note)}</td>
-        <td style="text-align:right;"><div class="rowActions"><button class="iconBtn" data-act="editDaily" data-id="${r.id}">編輯</button><button class="iconBtn danger" data-act="delDaily" data-id="${r.id}">刪除</button></div></td></tr>
-      `).join("") : `<tr><td colspan="5" style="color:var(--muted); padding:16px 12px;">無紀錄</td></tr>`;
+      try {
+        // 嚴謹的排序：先排日期 (新到舊)，日期相同排原始輸入順序 (新到舊)
+        const rows = (state.daily || [])
+          .filter(r => r)
+          .map((r, i) => ({...r, _idx: i}))
+          .sort((a,b) => {
+            const dateA = a.date || "";
+            const dateB = b.date || "";
+            if (dateA !== dateB) return dateB.localeCompare(dateA);
+            return b._idx - a._idx; 
+          });
+
+        $("#countText").textContent = `共 ${rows.length} 筆`;
+        $("#historyBody").innerHTML = rows.length ? rows.map(r => `
+          <tr><td>${escapeHtml(r.date)}</td>
+          <td><span class="tag"><span class="miniDot" style="background:${r.flow==='income' ? getCSS("--btn-income") : getCSS("--btn-expense")}"></span>${escapeHtml(CATEGORY_LABELS[r.category] || r.category)}</span></td>
+          <td class="amount">${r.flow==='income'?'+':'−'} ${fmt.format(r.amount||0)}</td>
+          <td style="color:var(--muted);">${escapeHtml(r.note)}</td>
+          <td style="text-align:right;"><div class="rowActions"><button class="iconBtn" data-act="editDaily" data-id="${r.id}">編輯</button><button class="iconBtn danger" data-act="delDaily" data-id="${r.id}">刪除</button></div></td></tr>
+        `).join("") : `<tr><td colspan="5" style="color:var(--muted); padding:16px 12px;">無紀錄</td></tr>`;
+      } catch (err) {
+        console.error("明細渲染時發生錯誤：", err);
+      }
     }
 
     function renderInventoryList(){
-      const rows = [...state.inventory].sort((a,b)=> (b.month||"").localeCompare(a.month||""));
-      $("#invCountText").textContent = `共 ${rows.length} 筆`;
-      $("#invBody").innerHTML = rows.length ? rows.map(r => `
-        <tr><td>${escapeHtml(r.month)}</td><td class="amount">${fmt.format(r.cash||0)}</td><td class="amount">${fmt.format(r.stocks||0)}</td><td class="amount">${fmt.format(r.interest||0)}</td>
-        <td style="color:var(--muted);">${escapeHtml(r.note)}</td>
-        <td style="text-align:right;"><div class="rowActions"><button class="iconBtn" data-act="editInv" data-id="${r.id}">編輯</button><button class="iconBtn danger" data-act="delInv" data-id="${r.id}">刪除</button></div></td></tr>
-      `).join("") : `<tr><td colspan="6" style="color:var(--muted); padding:16px 12px;">無盤點</td></tr>`;
+      try {
+        // 嚴謹的排序：月底盤點同樣套用新到舊邏輯
+        const rows = (state.inventory || [])
+          .filter(r => r)
+          .map((r, i) => ({...r, _idx: i}))
+          .sort((a,b) => {
+            const monthA = a.month || "";
+            const monthB = b.month || "";
+            if (monthA !== monthB) return monthB.localeCompare(monthA);
+            return b._idx - a._idx; 
+          });
+
+        $("#invCountText").textContent = `共 ${rows.length} 筆`;
+        $("#invBody").innerHTML = rows.length ? rows.map(r => `
+          <tr><td>${escapeHtml(r.month)}</td><td class="amount">${fmt.format(r.cash||0)}</td><td class="amount">${fmt.format(r.stocks||0)}</td><td class="amount">${fmt.format(r.interest||0)}</td>
+          <td style="color:var(--muted);">${escapeHtml(r.note)}</td>
+          <td style="text-align:right;"><div class="rowActions"><button class="iconBtn" data-act="editInv" data-id="${r.id}">編輯</button><button class="iconBtn danger" data-act="delInv" data-id="${r.id}">刪除</button></div></td></tr>
+        `).join("") : `<tr><td colspan="6" style="color:var(--muted); padding:16px 12px;">無盤點</td></tr>`;
+      } catch (err) {
+        console.error("盤點明細渲染時發生錯誤：", err);
+      }
     }
 
     /** ------------------------- Modal 與通用表單處理 ------------------------- */
