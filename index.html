@@ -299,14 +299,25 @@
 
     const state = { daily: [], inventory: [], chart: null, lastSync: null };
 
-    // 工具函式：整合日期輸出 (預設輸出 YYYY-MM-DD，帶入 true 則為 YYYY-MM)
+    // 工具函式
     const getISODate = (d = new Date(), monthOnly = false) => {
       const pad = n => String(n).padStart(2, "0");
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}${monthOnly ? '' : `-${pad(d.getDate())}`}`;
     };
     
+    // 🔥 強效日期轉換器：攔截 Google 傳來的雜亂日期字串，強制轉為標準格式
+    const safeYMD = (val) => {
+      if(!val) return "";
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? String(val).slice(0, 10) : getISODate(d);
+    };
+    const safeYM = (val) => {
+      if(!val) return "";
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? String(val).slice(0, 7) : getISODate(d, true);
+    };
+
     const getCSS = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-    const monthFromDate = d => (d || "").slice(0,7);
     const normalizeNum = n => Number.isFinite(Number(n)) ? Number(n) : 0;
     const escapeHtml = s => String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 
@@ -354,12 +365,13 @@
 
     /** ------------------------- 圖表邏輯精簡 ------------------------- */
     function buildSeries(months){
-      const sum = (mo, sets) => state.daily.filter(r => monthFromDate(r.date) === mo && sets.has(r.category)).reduce((s, r) => s + Number(r.amount||0), 0);
+      // 💡 在這裡用 safeYM 將日期轉為 YYYY-MM 後再比對
+      const sum = (mo, sets) => state.daily.filter(r => safeYM(r.date) === mo && sets.has(r.category)).reduce((s, r) => s + Number(r.amount||0), 0);
       return months.reduce((acc, mo) => {
         acc.income.push(sum(mo, new Set(["work_income","other_income"])));
         acc.expense.push(sum(mo, new Set(["fixed_expense","other_expense"])));
         acc.fixed.push(sum(mo, new Set(["fixed_expense"])));
-        const inv = state.inventory.find(x => x.month === mo);
+        const inv = state.inventory.find(x => safeYM(x.month) === mo);
         acc.assets.push(inv ? Number(inv.cash||0) + Number(inv.stocks||0) : null);
         acc.interest.push(inv ? Number(inv.interest||0) : 0);
         return acc;
@@ -375,15 +387,13 @@
 
     function renderChart(){
       try {
-        // 強制產生包含本月在內的過去 12 個月份
         const months = Array.from({length: 12}, (_, i) => {
           const d = new Date();
-          d.setDate(1); // 確保日期在1號，避免 31 號跨月時的計算 Bug
+          d.setDate(1);
           d.setMonth(d.getMonth() - 11 + i);
           return getISODate(d, true);
         });
         
-        // 防呆：確保 state.daily 或 inventory 有資料才隱藏提示
         $("#emptyHint").style.display = (state.daily && state.daily.length) || (state.inventory && state.inventory.length) ? "none" : "flex";
         
         const s = buildSeries(months);
@@ -403,7 +413,6 @@
           return;
         }
 
-        // 防呆：如果網路慢導致 Chart.js 尚未載入，就先跳過繪製
         if (typeof Chart === "undefined") return;
 
         state.chart = new Chart($("#lineChart"), {
@@ -431,20 +440,20 @@
     /** ------------------------- 列表渲染精簡 ------------------------- */
     function renderHistory(){
       try {
-        // 嚴謹的排序：先排日期 (新到舊)，日期相同排原始輸入順序 (新到舊)
         const rows = (state.daily || [])
           .filter(r => r)
           .map((r, i) => ({...r, _idx: i}))
           .sort((a,b) => {
-            const dateA = a.date || "";
-            const dateB = b.date || "";
+            // 💡 用 safeYMD 轉出標準日期再來比對，保證排序不會錯亂
+            const dateA = safeYMD(a.date);
+            const dateB = safeYMD(b.date);
             if (dateA !== dateB) return dateB.localeCompare(dateA);
             return b._idx - a._idx; 
           });
 
         $("#countText").textContent = `共 ${rows.length} 筆`;
         $("#historyBody").innerHTML = rows.length ? rows.map(r => `
-          <tr><td>${escapeHtml(r.date)}</td>
+          <tr><td>${escapeHtml(safeYMD(r.date))}</td>
           <td><span class="tag"><span class="miniDot" style="background:${r.flow==='income' ? getCSS("--btn-income") : getCSS("--btn-expense")}"></span>${escapeHtml(CATEGORY_LABELS[r.category] || r.category)}</span></td>
           <td class="amount">${r.flow==='income'?'+':'−'} ${fmt.format(r.amount||0)}</td>
           <td style="color:var(--muted);">${escapeHtml(r.note)}</td>
@@ -457,20 +466,19 @@
 
     function renderInventoryList(){
       try {
-        // 嚴謹的排序：月底盤點同樣套用新到舊邏輯
         const rows = (state.inventory || [])
           .filter(r => r)
           .map((r, i) => ({...r, _idx: i}))
           .sort((a,b) => {
-            const monthA = a.month || "";
-            const monthB = b.month || "";
+            const monthA = safeYM(a.month);
+            const monthB = safeYM(b.month);
             if (monthA !== monthB) return monthB.localeCompare(monthA);
             return b._idx - a._idx; 
           });
 
         $("#invCountText").textContent = `共 ${rows.length} 筆`;
         $("#invBody").innerHTML = rows.length ? rows.map(r => `
-          <tr><td>${escapeHtml(r.month)}</td><td class="amount">${fmt.format(r.cash||0)}</td><td class="amount">${fmt.format(r.stocks||0)}</td><td class="amount">${fmt.format(r.interest||0)}</td>
+          <tr><td>${escapeHtml(safeYM(r.month))}</td><td class="amount">${fmt.format(r.cash||0)}</td><td class="amount">${fmt.format(r.stocks||0)}</td><td class="amount">${fmt.format(r.interest||0)}</td>
           <td style="color:var(--muted);">${escapeHtml(r.note)}</td>
           <td style="text-align:right;"><div class="rowActions"><button class="iconBtn" data-act="editInv" data-id="${r.id}">編輯</button><button class="iconBtn danger" data-act="delInv" data-id="${r.id}">刪除</button></div></td></tr>
         `).join("") : `<tr><td colspan="6" style="color:var(--muted); padding:16px 12px;">無盤點</td></tr>`;
@@ -483,17 +491,22 @@
     const openModal = id => { $(`#${id}`).classList.add("open"); $(`#${id}`).setAttribute("aria-hidden", "false"); };
     const closeModal = id => { $(`#${id}`).classList.remove("open"); $(`#${id}`).setAttribute("aria-hidden", "true"); };
 
-    // 高度模組化的 Modal 開啟函數
     function fillAndOpenModal({ modalId, titleId, titleText, btnId, btnText, formId, defaultValues }) {
       $(titleId).textContent = titleText;
       $(btnId).textContent = btnText;
       const f = $(formId);
       f.reset();
-      Object.entries(defaultValues).forEach(([k, v]) => f.elements[k] && (f.elements[k].value = v));
+      Object.entries(defaultValues).forEach(([k, v]) => {
+        if(f.elements[k]) {
+           // 💡 開啟表單時也要把雜亂日期轉換回來，否則日期輸入框會空白
+           if (k === 'date') f.elements[k].value = safeYMD(v);
+           else if (k === 'month') f.elements[k].value = safeYM(v);
+           else f.elements[k].value = v;
+        }
+      });
       openModal(modalId);
     }
 
-    // DRY: 通用的表單送出綁定
     function bindFormSubmit(formId, modalId) {
       $(formId).addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -526,21 +539,17 @@
 
     /** ------------------------- 初始化綁定 ------------------------- */
     function wireEvents(){
-      // 共用 Modal 關閉機制
       document.addEventListener("click", e => e.target?.dataset?.close && closeModal(e.target.dataset.close));
       $$(".modalOverlay").forEach(ov => ov.addEventListener("mousedown", e => e.target === ov && closeModal(ov.id)));
       
-      // 表單送出綁定
       bindFormSubmit("#formIncome", "modalIncome");
       bindFormSubmit("#formExpense", "modalExpense");
       bindFormSubmit("#formAudit", "modalAudit");
 
-      // 按鈕開啟 Modal (新增)
       $("#btnIncome").onclick = () => fillAndOpenModal({ modalId: "modalIncome", titleId: "#incomeTitle", titleText: "＋ 記錄收入", btnId: "#incomeBtn", btnText: "儲存", formId: "#formIncome", defaultValues: { id: "", date: getISODate(), category: "work_income" }});
       $("#btnExpense").onclick = () => fillAndOpenModal({ modalId: "modalExpense", titleId: "#expenseTitle", titleText: "－ 分配支出", btnId: "#expenseBtn", btnText: "儲存", formId: "#formExpense", defaultValues: { id: "", date: getISODate(), category: "fixed_expense" }});
       $("#btnAudit").onclick = () => fillAndOpenModal({ modalId: "modalAudit", titleId: "#auditTitle", titleText: "⚖️ 月底盤點", btnId: "#auditBtn", btnText: "儲存", formId: "#formAudit", defaultValues: { id: "", month: getISODate(new Date(), true) }});
 
-      // 列表操作 (委派)
       document.addEventListener("click", e => {
         const { act, id } = e.target.dataset || {};
         if(!act) return;
@@ -556,7 +565,6 @@
         if(act === "delInv") apiDelete("deleteInventory", id, "盤點紀錄");
       });
 
-      // 圖表 Switch 與雜項
       $$(".switch input").forEach(el => el.addEventListener("change", applyToggles));
       $("#btnSync").onclick = loadAll;
       $("#btnPing").onclick = async () => toast(await apiGet({action:"ping"}).then(r=>r.json.ok).catch(()=>false) ? "API OK" : "API 連線異常");
